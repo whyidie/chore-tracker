@@ -19,9 +19,9 @@
   .add-form {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 2rem;
+    margin-bottom: 0.6rem;
   }
-  .add-form input {
+  .add-form input[type="text"] {
     flex: 1;
     padding: 0.6rem 0.8rem;
     border: 1px solid #ccc;
@@ -29,15 +29,40 @@
     font-size: 15px;
   }
   .add-form button {
-    padding: 0.6rem 1.2rem;
+    padding: 0.6rem 1.1rem;
     border: none;
     border-radius: 6px;
-    background: #2d6cdf;
-    color: white;
     font-size: 15px;
     cursor: pointer;
   }
-  .add-form button:hover { background: #2258bd; }
+  .add-form button[type="submit"] {
+    background: #2d6cdf;
+    color: white;
+  }
+  .add-form button[type="submit"]:hover { background: #2258bd; }
+  .details-toggle {
+    background: #e9e9e9;
+    color: #333;
+    width: 40px;
+  }
+  .details-toggle:hover { background: #dcdcdc; }
+
+  .add-details {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+  .add-details[hidden] { display: none; }
+  .add-details input, .add-details textarea {
+    flex: 1;
+    padding: 0.5rem 0.7rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .add-details textarea { min-height: 38px; }
 
   .board {
     display: grid;
@@ -65,7 +90,75 @@
     padding: 0.8rem;
     margin-bottom: 0.7rem;
   }
-  .card p { font-size: 15px; margin-bottom: 0.6rem; word-break: break-word; }
+  .card-top {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+  }
+  .card-title { font-size: 15px; word-break: break-word; }
+  .owner-tag {
+    font-size: 12px;
+    color: #555;
+    background: #eee;
+    border-radius: 10px;
+    padding: 0.15rem 0.55rem;
+    white-space: nowrap;
+  }
+  .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .info-btn {
+    border: none;
+    background: #e9e9e9;
+    color: #444;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    font-size: 12px;
+    line-height: 20px;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .info-btn:hover { background: #dcdcdc; }
+  .description-box {
+    font-size: 13px;
+    color: #444;
+    background: #f0f0f0;
+    border-radius: 4px;
+    padding: 0.5rem 0.6rem;
+    margin-bottom: 0.5rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .completed-row {
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .completed-row .edit-date-btn {
+    border: none;
+    background: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 12px;
+    padding: 0;
+  }
+  .completed-row .edit-date-btn:hover { color: #333; }
+  .completed-row input[type="datetime-local"] {
+    font-size: 12px;
+    padding: 0.15rem 0.3rem;
+  }
+
   .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
   .card-actions select {
     flex: 1;
@@ -94,8 +187,13 @@
   <div id="error" class="error" hidden></div>
   <form class="add-form" id="addForm">
     <input type="text" id="newTitle" placeholder="Add a chore..." required>
+    <button type="button" id="toggleDetails" class="details-toggle" title="Add owner / description">+</button>
     <button type="submit">Add</button>
   </form>
+  <div class="add-details" id="addDetails" hidden>
+    <input type="text" id="newOwner" placeholder="Owner (optional)">
+    <textarea id="newDescription" placeholder="Description (optional)"></textarea>
+  </div>
   <div class="board">
     <div class="column">
       <h2>To Do</h2>
@@ -115,6 +213,7 @@
 <script>
 const STATUSES = ['todo', 'in-progress', 'done'];
 const STATUS_LABELS = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' };
+const TIME_ZONE = 'America/Denver';
 const errorEl = document.getElementById('error');
 
 function showError(msg) {
@@ -123,6 +222,43 @@ function showError(msg) {
 }
 function clearError() {
   errorEl.hidden = true;
+}
+
+function toMountainDisplayString(isoString) {
+  return new Date(isoString).toLocaleString('en-US', {
+    timeZone: TIME_ZONE,
+    year: 'numeric', month: 'short', day: 'numeric',
+    hour: 'numeric', minute: '2-digit', timeZoneName: 'short'
+  });
+}
+
+function toMountainInputValue(isoString) {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit'
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date(isoString)).map(p => [p.type, p.value]));
+  const hh = parts.hour === '24' ? '00' : parts.hour;
+  return `${parts.year}-${parts.month}-${parts.day}T${hh}:${parts.minute}`;
+}
+
+function mountainInputValueToUTCISOString(localValue) {
+  const [datePart, timePart] = localValue.split('T');
+  const [y, mo, d] = datePart.split('-').map(Number);
+  const [h, mi] = timePart.split(':').map(Number);
+  const guess = Date.UTC(y, mo - 1, d, h, mi, 0);
+
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: TIME_ZONE, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit'
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date(guess)).map(p => [p.type, p.value]));
+  const hh = parts.hour === '24' ? 0 : parseInt(parts.hour, 10);
+  const asIfUTC = Date.UTC(parts.year, parts.month - 1, parts.day, hh, parts.minute, parts.second);
+  const offset = guess - asIfUTC;
+  return new Date(guess + offset).toISOString();
 }
 
 async function loadChores() {
@@ -160,9 +296,41 @@ function renderCard(chore) {
   const card = document.createElement('div');
   card.className = 'card';
 
+  const top = document.createElement('div');
+  top.className = 'card-top';
   const title = document.createElement('p');
+  title.className = 'card-title';
   title.textContent = chore.title;
-  card.appendChild(title);
+  top.appendChild(title);
+  if (chore.owner) {
+    const ownerTag = document.createElement('span');
+    ownerTag.className = 'owner-tag';
+    ownerTag.textContent = chore.owner;
+    top.appendChild(ownerTag);
+  }
+  card.appendChild(top);
+
+  if (chore.description) {
+    const meta = document.createElement('div');
+    meta.className = 'card-meta';
+    const infoBtn = document.createElement('button');
+    infoBtn.className = 'info-btn';
+    infoBtn.textContent = 'i';
+    infoBtn.title = 'View details';
+    meta.appendChild(infoBtn);
+    card.appendChild(meta);
+
+    const descBox = document.createElement('div');
+    descBox.className = 'description-box';
+    descBox.textContent = chore.description;
+    descBox.hidden = true;
+    infoBtn.addEventListener('click', () => { descBox.hidden = !descBox.hidden; });
+    card.appendChild(descBox);
+  }
+
+  if (chore.status === 'done' && chore.completed_at) {
+    card.appendChild(renderCompletedRow(chore));
+  }
 
   const actions = document.createElement('div');
   actions.className = 'card-actions';
@@ -175,7 +343,7 @@ function renderCard(chore) {
     if (s === chore.status) opt.selected = true;
     select.appendChild(opt);
   });
-  select.addEventListener('change', () => updateStatus(chore.id, select.value));
+  select.addEventListener('change', () => updateChore(chore.id, { status: select.value }));
   actions.appendChild(select);
 
   const delBtn = document.createElement('button');
@@ -187,13 +355,48 @@ function renderCard(chore) {
   return card;
 }
 
-async function updateStatus(id, status) {
+function renderCompletedRow(chore) {
+  const row = document.createElement('div');
+  row.className = 'completed-row';
+
+  const label = document.createElement('span');
+  label.textContent = 'Completed ' + toMountainDisplayString(chore.completed_at);
+  row.appendChild(label);
+
+  const editBtn = document.createElement('button');
+  editBtn.className = 'edit-date-btn';
+  editBtn.textContent = '✎';
+  editBtn.title = 'Change completion date';
+  row.appendChild(editBtn);
+
+  editBtn.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'datetime-local';
+    input.value = toMountainInputValue(chore.completed_at);
+    row.replaceChildren(input);
+    input.focus();
+
+    const commit = () => {
+      if (!input.value) return;
+      const isoString = mountainInputValueToUTCISOString(input.value);
+      updateChore(chore.id, { completed_at: isoString });
+    };
+    input.addEventListener('blur', commit);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') input.blur();
+    });
+  });
+
+  return row;
+}
+
+async function updateChore(id, fields) {
   clearError();
   try {
     const res = await fetch('/api/chores/' + id, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status })
+      body: JSON.stringify(fields)
     });
     if (!res.ok) throw new Error('Failed to update chore (' + res.status + ')');
     await loadChores();
@@ -213,20 +416,35 @@ async function deleteChore(id) {
   }
 }
 
+document.getElementById('toggleDetails').addEventListener('click', () => {
+  const details = document.getElementById('addDetails');
+  details.hidden = !details.hidden;
+});
+
 document.getElementById('addForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearError();
-  const input = document.getElementById('newTitle');
-  const title = input.value.trim();
+  const titleInput = document.getElementById('newTitle');
+  const ownerInput = document.getElementById('newOwner');
+  const descInput = document.getElementById('newDescription');
+  const title = titleInput.value.trim();
   if (!title) return;
   try {
     const res = await fetch('/api/chores', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title, status: 'todo' })
+      body: JSON.stringify({
+        title,
+        status: 'todo',
+        owner: ownerInput.value.trim() || null,
+        description: descInput.value.trim() || null
+      })
     });
     if (!res.ok) throw new Error('Failed to add chore (' + res.status + ')');
-    input.value = '';
+    titleInput.value = '';
+    ownerInput.value = '';
+    descInput.value = '';
+    document.getElementById('addDetails').hidden = true;
     await loadChores();
   } catch (err) {
     showError(err.message);

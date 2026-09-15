@@ -40,8 +40,11 @@ app.get('/api/chores', async (req, res) => {
 
 app.post('/api/chores', async (req, res) => {
   try {
-    const { title, status } = req.body;
-    const { data, error } = await supabase.from('chores').insert([{ title, status: status || 'todo' }]).select();
+    const { title, status, owner, description } = req.body;
+    const { data, error } = await supabase
+      .from('chores')
+      .insert([{ title, status: status || 'todo', owner: owner || null, description: description || null }])
+      .select();
     if (error) throw error;
     res.json(data[0]);
   } catch (err) {
@@ -52,8 +55,26 @@ app.post('/api/chores', async (req, res) => {
 app.patch('/api/chores/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, status } = req.body;
-    const { data, error } = await supabase.from('chores').update({ title, status }).eq('id', parseInt(id)).select();
+    const { title, status, owner, description, completed_at } = req.body;
+    const update = {};
+    if (title !== undefined) update.title = title;
+    if (owner !== undefined) update.owner = owner;
+    if (description !== undefined) update.description = description;
+
+    if (status !== undefined) {
+      update.status = status;
+      if (completed_at !== undefined) {
+        update.completed_at = completed_at;
+      } else if (status === 'done') {
+        update.completed_at = new Date().toISOString();
+      } else {
+        update.completed_at = null;
+      }
+    } else if (completed_at !== undefined) {
+      update.completed_at = completed_at;
+    }
+
+    const { data, error } = await supabase.from('chores').update(update).eq('id', parseInt(id)).select();
     if (error) throw error;
     res.json(data[0]);
   } catch (err) {
