@@ -77,5 +77,5 @@ app.get('*', (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(Chore tracker server running on port );
+  console.log(`Chore tracker server running on port ${PORT}`);
 });

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chore Tracker</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f5f5f5;
+    padding: 2rem;
+    min-height: 100vh;
+    color: #222;
+  }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { margin-bottom: 1.5rem; font-size: 28px; }
+
+  .add-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+  }
+  .add-form input {
+    flex: 1;
+    padding: 0.6rem 0.8rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 15px;
+  }
+  .add-form button {
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 6px;
+    background: #2d6cdf;
+    color: white;
+    font-size: 15px;
+    cursor: pointer;
+  }
+  .add-form button:hover { background: #2258bd; }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+  }
+  .column {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #ddd;
+    padding: 1.2rem;
+    min-height: 300px;
+  }
+  .column h2 {
+    font-size: 16px;
+    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: #555;
+  }
+  .card {
+    background: #fafafa;
+    border: 1px solid #e2e2e2;
+    border-radius: 6px;
+    padding: 0.8rem;
+    margin-bottom: 0.7rem;
+  }
+  .card p { font-size: 15px; margin-bottom: 0.6rem; word-break: break-word; }
+  .card-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .card-actions select {
+    flex: 1;
+    padding: 0.3rem;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    font-size: 13px;
+  }
+  .card-actions button {
+    padding: 0.3rem 0.6rem;
+    border: none;
+    border-radius: 4px;
+    background: #e04545;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .card-actions button:hover { background: #c73838; }
+  .empty { color: #999; font-size: 14px; }
+  .error { color: #c73838; margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Chore Tracker</h1>
+  <div id="error" class="error" hidden></div>
+  <form class="add-form" id="addForm">
+    <input type="text" id="newTitle" placeholder="Add a chore..." required>
+    <button type="submit">Add</button>
+  </form>
+  <div class="board">
+    <div class="column">
+      <h2>To Do</h2>
+      <div class="column-items" id="col-todo"></div>
+    </div>
+    <div class="column">
+      <h2>In Progress</h2>
+      <div class="column-items" id="col-in-progress"></div>
+    </div>
+    <div class="column">
+      <h2>Done</h2>
+      <div class="column-items" id="col-done"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const STATUSES = ['todo', 'in-progress', 'done'];
+const STATUS_LABELS = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' };
+const errorEl = document.getElementById('error');
+
+function showError(msg) {
+  errorEl.textContent = msg;
+  errorEl.hidden = false;
+}
+function clearError() {
+  errorEl.hidden = true;
+}
+
+async function loadChores() {
+  clearError();
+  try {
+    const res = await fetch('/api/chores');
+    if (!res.ok) throw new Error('Failed to load chores (' + res.status + ')');
+    const chores = await res.json();
+    render(chores);
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+function render(chores) {
+  STATUSES.forEach(s => { document.getElementById('col-' + s).innerHTML = ''; });
+
+  const byStatus = { todo: [], 'in-progress': [], done: [] };
+  chores.forEach(c => {
+    (byStatus[c.status] || byStatus.todo).push(c);
+  });
+
+  STATUSES.forEach(status => {
+    const container = document.getElementById('col-' + status);
+    const items = byStatus[status];
+    if (items.length === 0) {
+      container.innerHTML = '<p class="empty">Nothing here</p>';
+      return;
+    }
+    items.forEach(chore => container.appendChild(renderCard(chore)));
+  });
+}
+
+function renderCard(chore) {
+  const card = document.createElement('div');
+  card.className = 'card';
+
+  const title = document.createElement('p');
+  title.textContent = chore.title;
+  card.appendChild(title);
+
+  const actions = document.createElement('div');
+  actions.className = 'card-actions';
+
+  const select = document.createElement('select');
+  STATUSES.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = STATUS_LABELS[s];
+    if (s === chore.status) opt.selected = true;
+    select.appendChild(opt);
+  });
+  select.addEventListener('change', () => updateStatus(chore.id, select.value));
+  actions.appendChild(select);
+
+  const delBtn = document.createElement('button');
+  delBtn.textContent = 'Delete';
+  delBtn.addEventListener('click', () => deleteChore(chore.id));
+  actions.appendChild(delBtn);
+
+  card.appendChild(actions);
+  return card;
+}
+
+async function updateStatus(id, status) {
+  clearError();
+  try {
+    const res = await fetch('/api/chores/' + id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    if (!res.ok) throw new Error('Failed to update chore (' + res.status + ')');
+    await loadChores();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+async function deleteChore(id) {
+  clearError();
+  try {
+    const res = await fetch('/api/chores/' + id, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete chore (' + res.status + ')');
+    await loadChores();
+  } catch (err) {
+    showError(err.message);
+  }
+}
+
+document.getElementById('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  const input = document.getElementById('newTitle');
+  const title = input.value.trim();
+  if (!title) return;
+  try {
+    const res = await fetch('/api/chores', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title, status: 'todo' })
+    });
+    if (!res.ok) throw new Error('Failed to add chore (' + res.status + ')');
+    input.value = '';
+    await loadChores();
+  } catch (err) {
+    showError(err.message);
+  }
+});
+
+loadChores();
+</script>
+</body>
+</html>
