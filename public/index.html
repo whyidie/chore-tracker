@@ -171,12 +171,48 @@
     padding: 0.3rem 0.6rem;
     border: none;
     border-radius: 4px;
-    background: #e04545;
+    background: #6b7280;
     color: white;
     font-size: 13px;
     cursor: pointer;
   }
-  .card-actions button:hover { background: #c73838; }
+  .card-actions button:hover { background: #565d68; }
+
+  .edit-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-bottom: 0.5rem;
+  }
+  .edit-panel input, .edit-panel textarea {
+    padding: 0.4rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+    resize: vertical;
+  }
+  .edit-panel textarea { min-height: 50px; }
+  .edit-panel-actions {
+    display: flex;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+  .edit-panel-actions button {
+    padding: 0.3rem 0.6rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    color: white;
+  }
+  .edit-panel-actions .save-btn { background: #2d6cdf; }
+  .edit-panel-actions .save-btn:hover { background: #2258bd; }
+  .edit-panel-actions .cancel-btn { background: #9ca3af; }
+  .edit-panel-actions .cancel-btn:hover { background: #828a96; }
+  .edit-panel-actions .delete-btn { background: #e04545; margin-left: auto; }
+  .edit-panel-actions .delete-btn:hover { background: #c73838; }
+
   .empty { color: #999; font-size: 14px; }
   .error { color: #c73838; margin-bottom: 1rem; }
 </style>
@@ -296,62 +332,125 @@ function renderCard(chore) {
   const card = document.createElement('div');
   card.className = 'card';
 
-  const top = document.createElement('div');
-  top.className = 'card-top';
-  const title = document.createElement('p');
-  title.className = 'card-title';
-  title.textContent = chore.title;
-  top.appendChild(title);
-  if (chore.owner) {
-    const ownerTag = document.createElement('span');
-    ownerTag.className = 'owner-tag';
-    ownerTag.textContent = chore.owner;
-    top.appendChild(ownerTag);
+  function showView() {
+    card.innerHTML = '';
+
+    const top = document.createElement('div');
+    top.className = 'card-top';
+    const title = document.createElement('p');
+    title.className = 'card-title';
+    title.textContent = chore.title;
+    top.appendChild(title);
+    if (chore.owner) {
+      const ownerTag = document.createElement('span');
+      ownerTag.className = 'owner-tag';
+      ownerTag.textContent = chore.owner;
+      top.appendChild(ownerTag);
+    }
+    card.appendChild(top);
+
+    if (chore.description) {
+      const meta = document.createElement('div');
+      meta.className = 'card-meta';
+      const infoBtn = document.createElement('button');
+      infoBtn.className = 'info-btn';
+      infoBtn.textContent = 'i';
+      infoBtn.title = 'View details';
+      meta.appendChild(infoBtn);
+      card.appendChild(meta);
+
+      const descBox = document.createElement('div');
+      descBox.className = 'description-box';
+      descBox.textContent = chore.description;
+      descBox.hidden = true;
+      infoBtn.addEventListener('click', () => { descBox.hidden = !descBox.hidden; });
+      card.appendChild(descBox);
+    }
+
+    if (chore.status === 'done' && chore.completed_at) {
+      card.appendChild(renderCompletedRow(chore));
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'card-actions';
+
+    const select = document.createElement('select');
+    STATUSES.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s;
+      opt.textContent = STATUS_LABELS[s];
+      if (s === chore.status) opt.selected = true;
+      select.appendChild(opt);
+    });
+    select.addEventListener('change', () => updateChore(chore.id, { status: select.value }));
+    actions.appendChild(select);
+
+    const editBtn = document.createElement('button');
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', showEdit);
+    actions.appendChild(editBtn);
+
+    card.appendChild(actions);
   }
-  card.appendChild(top);
 
-  if (chore.description) {
-    const meta = document.createElement('div');
-    meta.className = 'card-meta';
-    const infoBtn = document.createElement('button');
-    infoBtn.className = 'info-btn';
-    infoBtn.textContent = 'i';
-    infoBtn.title = 'View details';
-    meta.appendChild(infoBtn);
-    card.appendChild(meta);
+  function showEdit() {
+    card.innerHTML = '';
 
-    const descBox = document.createElement('div');
-    descBox.className = 'description-box';
-    descBox.textContent = chore.description;
-    descBox.hidden = true;
-    infoBtn.addEventListener('click', () => { descBox.hidden = !descBox.hidden; });
-    card.appendChild(descBox);
+    const panel = document.createElement('div');
+    panel.className = 'edit-panel';
+
+    const titleInput = document.createElement('input');
+    titleInput.type = 'text';
+    titleInput.value = chore.title;
+    titleInput.placeholder = 'Title';
+    panel.appendChild(titleInput);
+
+    const ownerInput = document.createElement('input');
+    ownerInput.type = 'text';
+    ownerInput.value = chore.owner || '';
+    ownerInput.placeholder = 'Owner (optional)';
+    panel.appendChild(ownerInput);
+
+    const descInput = document.createElement('textarea');
+    descInput.value = chore.description || '';
+    descInput.placeholder = 'Description (optional)';
+    panel.appendChild(descInput);
+
+    card.appendChild(panel);
+
+    const editActions = document.createElement('div');
+    editActions.className = 'edit-panel-actions';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'save-btn';
+    saveBtn.textContent = 'Save';
+    saveBtn.addEventListener('click', () => {
+      const title = titleInput.value.trim();
+      if (!title) return;
+      updateChore(chore.id, {
+        title,
+        owner: ownerInput.value.trim() || null,
+        description: descInput.value.trim() || null
+      });
+    });
+    editActions.appendChild(saveBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'cancel-btn';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', showView);
+    editActions.appendChild(cancelBtn);
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = 'delete-btn';
+    deleteBtn.textContent = 'Delete';
+    deleteBtn.addEventListener('click', () => deleteChore(chore.id));
+    editActions.appendChild(deleteBtn);
+
+    card.appendChild(editActions);
   }
 
-  if (chore.status === 'done' && chore.completed_at) {
-    card.appendChild(renderCompletedRow(chore));
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'card-actions';
-
-  const select = document.createElement('select');
-  STATUSES.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s;
-    opt.textContent = STATUS_LABELS[s];
-    if (s === chore.status) opt.selected = true;
-    select.appendChild(opt);
-  });
-  select.addEventListener('change', () => updateChore(chore.id, { status: select.value }));
-  actions.appendChild(select);
-
-  const delBtn = document.createElement('button');
-  delBtn.textContent = 'Delete';
-  delBtn.addEventListener('click', () => deleteChore(chore.id));
-  actions.appendChild(delBtn);
-
-  card.appendChild(actions);
+  showView();
   return card;
 }
 
