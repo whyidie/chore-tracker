@@ -63,6 +63,28 @@
     resize: vertical;
   }
   .add-details textarea { min-height: 38px; }
+  .add-details-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 14px;
+    color: #333;
+    white-space: nowrap;
+  }
+
+  .filter-bar {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.2rem;
+    flex-wrap: wrap;
+  }
+  .filter-bar select {
+    padding: 0.4rem 0.6rem;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 14px;
+    background: white;
+  }
 
   .board {
     display: grid;
@@ -106,6 +128,28 @@
     padding: 0.15rem 0.55rem;
     white-space: nowrap;
   }
+  .review-tag {
+    font-size: 12px;
+    color: #7a4d00;
+    background: #ffe6b3;
+    border-radius: 10px;
+    padding: 0.15rem 0.55rem;
+    white-space: nowrap;
+  }
+  .review-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .review-actions button {
+    padding: 0.3rem 0.6rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    cursor: pointer;
+    color: white;
+    flex: 1;
+  }
+  .review-actions .approve-btn { background: #2f9e44; }
+  .review-actions .approve-btn:hover { background: #268238; }
+  .review-actions .reject-btn { background: #e04545; }
+  .review-actions .reject-btn:hover { background: #c73838; }
   .card-meta {
     display: flex;
     align-items: center;
@@ -229,6 +273,18 @@
   <div class="add-details" id="addDetails" hidden>
     <input type="text" id="newOwner" placeholder="Owner (optional)">
     <textarea id="newDescription" placeholder="Description (optional)"></textarea>
+    <label class="add-details-checkbox">
+      <input type="checkbox" id="newNeedsReview">
+      Requires review
+    </label>
+  </div>
+  <div class="filter-bar">
+    <select id="filterOwner">
+      <option value="">All owners</option>
+    </select>
+    <select id="filterStatus">
+      <option value="">All statuses</option>
+    </select>
   </div>
   <div class="board">
     <div class="column">
@@ -240,6 +296,10 @@
       <div class="column-items" id="col-in-progress"></div>
     </div>
     <div class="column">
+      <h2>Review</h2>
+      <div class="column-items" id="col-review"></div>
+    </div>
+    <div class="column">
       <h2>Done</h2>
       <div class="column-items" id="col-done"></div>
     </div>
@@ -247,10 +307,16 @@
 </div>
 
 <script>
-const STATUSES = ['todo', 'in-progress', 'done'];
-const STATUS_LABELS = { todo: 'To Do', 'in-progress': 'In Progress', done: 'Done' };
+const STATUSES = ['todo', 'in-progress', 'review', 'done'];
+const STATUS_LABELS = { todo: 'To Do', 'in-progress': 'In Progress', review: 'Review', done: 'Done' };
 const TIME_ZONE = 'America/Denver';
 const errorEl = document.getElementById('error');
+let allChores = [];
+
+function allowedStatusesFor(chore) {
+  if (chore.status === 'done') return ['todo', 'in-progress', 'done'];
+  return chore.needs_review ? ['todo', 'in-progress', 'review'] : ['todo', 'in-progress', 'done'];
+}
 
 function showError(msg) {
   errorEl.textContent = msg;
@@ -302,17 +368,38 @@ async function loadChores() {
   try {
     const res = await fetch('/api/chores');
     if (!res.ok) throw new Error('Failed to load chores (' + res.status + ')');
-    const chores = await res.json();
-    render(chores);
+    allChores = await res.json();
+    populateOwnerFilter();
+    applyFiltersAndRender();
   } catch (err) {
     showError(err.message);
   }
 }
 
+function populateOwnerFilter() {
+  const select = document.getElementById('filterOwner');
+  const current = select.value;
+  const owners = Array.from(new Set(allChores.map(c => c.owner).filter(Boolean))).sort();
+  select.innerHTML = '<option value="">All owners</option>' +
+    owners.map(o => `<option value="${o}">${o}</option>`).join('');
+  if (owners.includes(current)) select.value = current;
+}
+
+function applyFiltersAndRender() {
+  const ownerFilter = document.getElementById('filterOwner').value;
+  const statusFilter = document.getElementById('filterStatus').value;
+  const filtered = allChores.filter(c => {
+    if (ownerFilter && c.owner !== ownerFilter) return false;
+    if (statusFilter && c.status !== statusFilter) return false;
+    return true;
+  });
+  render(filtered);
+}
+
 function render(chores) {
   STATUSES.forEach(s => { document.getElementById('col-' + s).innerHTML = ''; });
 
-  const byStatus = { todo: [], 'in-progress': [], done: [] };
+  const byStatus = { todo: [], 'in-progress': [], review: [], done: [] };
   chores.forEach(c => {
     (byStatus[c.status] || byStatus.todo).push(c);
   });
@@ -347,6 +434,12 @@ function renderCard(chore) {
       ownerTag.textContent = chore.owner;
       top.appendChild(ownerTag);
     }
+    if (chore.needs_review) {
+      const reviewTag = document.createElement('span');
+      reviewTag.className = 'review-tag';
+      reviewTag.textContent = 'Inspect';
+      top.appendChild(reviewTag);
+    }
     card.appendChild(top);
 
     if (chore.description) {
@@ -371,19 +464,40 @@ function renderCard(chore) {
       card.appendChild(renderCompletedRow(chore));
     }
 
+    if (chore.needs_review && chore.status === 'review') {
+      const reviewActions = document.createElement('div');
+      reviewActions.className = 'review-actions';
+
+      const approveBtn = document.createElement('button');
+      approveBtn.className = 'approve-btn';
+      approveBtn.textContent = 'Approve';
+      approveBtn.addEventListener('click', () => updateChore(chore.id, { status: 'done' }));
+      reviewActions.appendChild(approveBtn);
+
+      const rejectBtn = document.createElement('button');
+      rejectBtn.className = 'reject-btn';
+      rejectBtn.textContent = 'Reject';
+      rejectBtn.addEventListener('click', () => updateChore(chore.id, { status: 'in-progress' }));
+      reviewActions.appendChild(rejectBtn);
+
+      card.appendChild(reviewActions);
+    }
+
     const actions = document.createElement('div');
     actions.className = 'card-actions';
 
-    const select = document.createElement('select');
-    STATUSES.forEach(s => {
-      const opt = document.createElement('option');
-      opt.value = s;
-      opt.textContent = STATUS_LABELS[s];
-      if (s === chore.status) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener('change', () => updateChore(chore.id, { status: select.value }));
-    actions.appendChild(select);
+    if (!(chore.needs_review && chore.status === 'review')) {
+      const select = document.createElement('select');
+      allowedStatusesFor(chore).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = STATUS_LABELS[s];
+        if (s === chore.status) opt.selected = true;
+        select.appendChild(opt);
+      });
+      select.addEventListener('change', () => updateChore(chore.id, { status: select.value }));
+      actions.appendChild(select);
+    }
 
     const editBtn = document.createElement('button');
     editBtn.textContent = 'Edit';
@@ -520,12 +634,23 @@ document.getElementById('toggleDetails').addEventListener('click', () => {
   details.hidden = !details.hidden;
 });
 
+const filterStatusEl = document.getElementById('filterStatus');
+STATUSES.forEach(s => {
+  const opt = document.createElement('option');
+  opt.value = s;
+  opt.textContent = STATUS_LABELS[s];
+  filterStatusEl.appendChild(opt);
+});
+document.getElementById('filterOwner').addEventListener('change', applyFiltersAndRender);
+filterStatusEl.addEventListener('change', applyFiltersAndRender);
+
 document.getElementById('addForm').addEventListener('submit', async (e) => {
   e.preventDefault();
   clearError();
   const titleInput = document.getElementById('newTitle');
   const ownerInput = document.getElementById('newOwner');
   const descInput = document.getElementById('newDescription');
+  const needsReviewInput = document.getElementById('newNeedsReview');
   const title = titleInput.value.trim();
   if (!title) return;
   try {
@@ -536,13 +661,15 @@ document.getElementById('addForm').addEventListener('submit', async (e) => {
         title,
         status: 'todo',
         owner: ownerInput.value.trim() || null,
-        description: descInput.value.trim() || null
+        description: descInput.value.trim() || null,
+        needs_review: needsReviewInput.checked
       })
     });
     if (!res.ok) throw new Error('Failed to add chore (' + res.status + ')');
     titleInput.value = '';
     ownerInput.value = '';
     descInput.value = '';
+    needsReviewInput.checked = false;
     document.getElementById('addDetails').hidden = true;
     await loadChores();
   } catch (err) {

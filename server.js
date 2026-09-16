@@ -40,10 +40,16 @@ app.get('/api/chores', async (req, res) => {
 
 app.post('/api/chores', async (req, res) => {
   try {
-    const { title, status, owner, description } = req.body;
+    const { title, status, owner, description, needs_review } = req.body;
     const { data, error } = await supabase
       .from('chores')
-      .insert([{ title, status: status || 'todo', owner: owner || null, description: description || null }])
+      .insert([{
+        title,
+        status: status || 'todo',
+        owner: owner || null,
+        description: description || null,
+        needs_review: !!needs_review
+      }])
       .select();
     if (error) throw error;
     res.json(data[0]);
@@ -55,11 +61,12 @@ app.post('/api/chores', async (req, res) => {
 app.patch('/api/chores/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, status, owner, description, completed_at } = req.body;
+    const { title, status, owner, description, completed_at, needs_review } = req.body;
     const update = {};
     if (title !== undefined) update.title = title;
     if (owner !== undefined) update.owner = owner;
     if (description !== undefined) update.description = description;
+    if (needs_review !== undefined) update.needs_review = !!needs_review;
 
     if (status !== undefined) {
       update.status = status;
